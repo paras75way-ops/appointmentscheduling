@@ -31,7 +31,7 @@ Install the dependencies:
 npm install
 ```
 
-Configure your environment variables:
+Configure your environment variable:
 Create a `.env` file in the `backend/appointmentbackend` directory. Here is an example:
 ```env
 PORT=5000
