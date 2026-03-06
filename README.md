@@ -67,7 +67,7 @@ Configure your environment variables:
 Create a `.env` file in the `frontend/appointmentfrontend` directory and add your backend API URL (if different from default):
 ```env
 VITE_API_URL=http://localhost:5000/api
-VITE_BACKEND_URL=http://localhost:5000/api/auth
+Backend_url=http://localhost:5000/api/auth
 ```
 
 Start the frontend development server:
