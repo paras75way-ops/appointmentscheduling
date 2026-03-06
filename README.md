@@ -11,7 +11,7 @@ Welcome to the Appointment Booking Platform! This is a full-stack web applicatio
 
 ## Tech Stack
 - **Frontend:** React, React Router v7, Tailwind CSS, RTK Query (Redux Toolkit), Zod Validation
-- **Backend:** Node.js, Express, TypeScript, MongoDB, Mongoose, Nodemailer
+- **Backend:** Node.js, Express, TypeScript, MongoDB, Mongoose, Nodemailer,cron for scheduling mails 
 
 ## Prerequisites
 Before you begin, ensure you have the following installed on your machine:
