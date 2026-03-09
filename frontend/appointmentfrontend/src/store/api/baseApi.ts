@@ -18,6 +18,8 @@ const baseQuery = fetchBaseQuery({
   },
 });
 
+let consecutive401Count = 0;
+
 export const baseQueryWithReauth: BaseQueryFn<
   string | FetchArgs,
   unknown,
@@ -27,6 +29,13 @@ export const baseQueryWithReauth: BaseQueryFn<
   let result = await baseQuery(args, api, extraOptions);
 
   if (result.error?.status === 401) {
+    consecutive401Count += 1;
+
+    if (consecutive401Count >= 5) {
+      localStorage.removeItem("accessToken");
+      api.dispatch(logout());
+      return result;
+    }
 
     const refreshResult = await baseQuery(
       {
@@ -38,18 +47,23 @@ export const baseQueryWithReauth: BaseQueryFn<
     );
 
     if (refreshResult.data) {
-console.log("ddd",refreshResult);
-
       const { accessToken } = refreshResult.data as { accessToken: string };
 
       api.dispatch(setAccessToken(accessToken));
 
       result = await baseQuery(args, api, extraOptions);
 
+      // If retry succeeds, reset the counter
+      if (result.error?.status !== 401) {
+        consecutive401Count = 0;
+      }
     } else {
-
+      localStorage.removeItem("accessToken");
       api.dispatch(logout());
     }
+  } else {
+    // Reset counter when we get a successful response or non-401 error
+    consecutive401Count = 0;
   }
 
   return result;

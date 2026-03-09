@@ -4,35 +4,44 @@ import { signup } from "../services/auth.service";
 import { useState } from "react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { ISignUpForm } from "../types/auth";
 
-const signUpSchema = z.object({
-  role: z.enum(["user", "admin"], { errorMap: () => ({ message: "Role is required" }) }),
-  name: z.string().min(1, "Name is required"),
-  email: z.string().email("Invalid email format"),
-  password: z.string()
-    .min(6, "Minimum 6 characters")
-    .regex(/[A-Z]/, "Must include at least one uppercase letter"),
-  organizationName: z.string().optional(),
-  organizationType: z.enum(["clinic", "salon", "service_provider", "coworking_space", ""]).optional(),
-}).superRefine((data, ctx) => {
-  if (data.role === "admin") {
-    if (!data.organizationName || data.organizationName.trim() === "") {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Organization name is required",
-        path: ["organizationName"],
-      });
+ 
+const signUpSchema = z
+  .object({
+    role: z.enum(["user", "admin"], { message: "Role is required" }),
+    name: z.string().min(1, "Name is required"),
+    email: z.string().email({ message: "Invalid email format" }),
+    password: z
+      .string()
+      .min(6, "Minimum 6 characters")
+      .regex(/[A-Z]/, "Must include at least one uppercase letter"),
+    organizationName: z.string().optional(),
+    organizationType: z
+      .enum(["clinic", "salon", "service_provider", "coworking_space"])
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.role === "admin") {
+      if (!data.organizationName || data.organizationName.trim() === "") {
+        ctx.addIssue({
+          code: "custom",
+          message: "Organization name is required",
+          path: ["organizationName"],
+        });
+      }
+
+      if (!data.organizationType) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Organization type is required",
+          path: ["organizationType"],
+        });
+      }
     }
-    if (!data.organizationType || data.organizationType.trim() === "") {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Organization type is required",
-        path: ["organizationType"],
-      });
-    }
-  }
-});
+  });
+
+// Infer TypeScript type from schema
+type ISignUpForm = z.infer<typeof signUpSchema>;
 
 export default function SignUp() {
   const navigate = useNavigate();
@@ -76,9 +85,7 @@ export default function SignUp() {
         </h2>
 
         {serverError && (
-          <div className="mb-4 text-sm text-red-600 text-center">
-            {serverError}
-          </div>
+          <div className="mb-4 text-sm text-red-600 text-center">{serverError}</div>
         )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
@@ -89,6 +96,7 @@ export default function SignUp() {
             </label>
             <select
               {...register("role")}
+              defaultValue=""
               className="w-full p-2.5 rounded-lg border bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
             >
               <option value="">Select Role</option>
@@ -96,9 +104,7 @@ export default function SignUp() {
               <option value="admin">Organization Admin</option>
             </select>
             {errors.role && (
-              <p className="text-red-500 text-xs mt-1">
-                {errors.role.message}
-              </p>
+              <p className="text-red-500 text-xs mt-1">{errors.role.message}</p>
             )}
           </div>
 
@@ -113,9 +119,7 @@ export default function SignUp() {
               className="w-full p-2.5 rounded-lg border bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
             />
             {errors.name && (
-              <p className="text-red-500 text-xs mt-1">
-                {errors.name.message}
-              </p>
+              <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>
             )}
           </div>
 
@@ -130,9 +134,7 @@ export default function SignUp() {
               className="w-full p-2.5 rounded-lg border bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
             />
             {errors.email && (
-              <p className="text-red-500 text-xs mt-1">
-                {errors.email.message}
-              </p>
+              <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>
             )}
           </div>
 
@@ -147,13 +149,11 @@ export default function SignUp() {
               className="w-full p-2.5 rounded-lg border bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
             />
             {errors.password && (
-              <p className="text-red-500 text-xs mt-1">
-                {errors.password.message}
-              </p>
+              <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>
             )}
           </div>
 
-          {/* Organization Fields (Admin only) */}
+          {/* Organization Fields */}
           {selectedRole === "admin" && (
             <>
               <div>
@@ -163,8 +163,8 @@ export default function SignUp() {
                 <input
                   type="text"
                   {...register("organizationName")}
-                  className="w-full p-2.5 rounded-lg border bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
                   placeholder="e.g. Sunrise Clinic"
+                  className="w-full p-2.5 rounded-lg border bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
                 />
                 {errors.organizationName && (
                   <p className="text-red-500 text-xs mt-1">
@@ -179,6 +179,7 @@ export default function SignUp() {
                 </label>
                 <select
                   {...register("organizationType")}
+                  defaultValue=""
                   className="w-full p-2.5 rounded-lg border bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
                 >
                   <option value="">Select Type</option>

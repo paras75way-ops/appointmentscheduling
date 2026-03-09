@@ -67,6 +67,37 @@ export interface IUtcSlot {
   endTimeUtc: string;
 }
 
+export interface IService {
+  _id: string;
+  name: string;
+  description: string;
+  price: number;
+  duration: number;
+  organizationId: string | { _id: string; name: string; type: string };
+  category?: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ICreateServiceForm {
+  name: string;
+  description: string;
+  price: number;
+  duration: number;
+  organizationId: string;
+  category?: string;
+}
+
+export interface IUpdateServiceForm {
+  name?: string;
+  description?: string;
+  price?: number;
+  duration?: number;
+  category?: string;
+  isActive?: boolean;
+}
+
 export type AppointmentStatus = "booked" | "cancelled" | "completed" | "rescheduled" | "no-show";
 
 export interface IAppointment {
@@ -74,6 +105,7 @@ export interface IAppointment {
   organizationId: string | { _id: string; name: string; type: string };
   staffId: string | { _id: string; name: string; email: string };
   userId: string | { _id: string; name: string; email: string };
+  serviceId?: string | { _id: string; name: string; duration: number; price: number };
   startTime: string;
   endTime: string;
   status: AppointmentStatus;
@@ -86,6 +118,7 @@ export interface IAppointment {
 export interface IBookAppointmentForm {
   organizationId: string;
   staffId: string;
+  serviceId: string;
   startTimeUtc: string;
   notes?: string;
 }

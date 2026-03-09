@@ -43,3 +43,36 @@ export const removeStaff = async (req: AuthRequest, res: Response) => {
         return res.status(400).json({ message });
     }
 };
+
+export const assignService = async (req: AuthRequest, res: Response) => {
+    try {
+        const adminId = req.user?.id;
+        if (!adminId) return res.status(401).json({ message: "Unauthorized" });
+
+        const staffId = req.params.staffId as string;
+        const serviceId = req.params.serviceId as string;
+        const result = await staffService.assignServiceToStaff(adminId, staffId, serviceId);
+        return res.status(200).json(result);
+    } catch (err: unknown) {
+        const message =
+            err instanceof Error ? err.message : "Failed to assign service";
+        return res.status(400).json({ message });
+    }
+};
+
+export const removeService = async (req: AuthRequest, res: Response) => {
+    try {
+        const adminId = req.user?.id;
+        if (!adminId) return res.status(401).json({ message: "Unauthorized" });
+
+        const staffId = req.params.staffId as string;
+        const serviceId = req.params.serviceId as string;
+        const result = await staffService.removeServiceFromStaff(adminId, staffId, serviceId);
+        return res.json(result);
+    } catch (err: unknown) {
+        const message =
+            err instanceof Error ? err.message : "Failed to remove service from staff";
+        return res.status(400).json({ message });
+    }
+};
+

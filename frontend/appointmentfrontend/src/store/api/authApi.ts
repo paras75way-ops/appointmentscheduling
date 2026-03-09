@@ -12,12 +12,21 @@ import type {
   IBookAppointmentForm,
   IReschedulePolicy,
   IRescheduleAppointmentForm,
+  IService,
+  ICreateServiceForm,
+  IUpdateServiceForm,
 } from "../../types/auth";
+
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+}
 
 export const authApi = createApi({
   reducerPath: "authApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["User", "Organization", "Staff", "BusinessHours", "Appointments", "ReschedulePolicy"],
+  tagTypes: ["User", "Organization", "Staff", "BusinessHours", "Appointments", "ReschedulePolicy", "Services"],
   endpoints: (builder) => ({
 
     getMe: builder.query<IUser, void>({
@@ -68,6 +77,28 @@ export const authApi = createApi({
       invalidatesTags: ["Staff"],
     }),
 
+    assignServiceToStaff: builder.mutation<
+      { message: string },
+      { staffId: string; serviceId: string }
+    >({
+      query: ({ staffId, serviceId }) => ({
+        url: `/staff/${staffId}/services/${serviceId}`,
+        method: "POST",
+      }),
+      invalidatesTags: ["Staff"],
+    }),
+
+    removeServiceFromStaff: builder.mutation<
+      { message: string },
+      { staffId: string; serviceId: string }
+    >({
+      query: ({ staffId, serviceId }) => ({
+        url: `/staff/${staffId}/services/${serviceId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["Staff"],
+    }),
+
     getBusinessHours: builder.query<IBusinessHours, string>({
       query: (organizationId) => `/business-hours/${organizationId}`,
       providesTags: ["BusinessHours"],
@@ -87,10 +118,13 @@ export const authApi = createApi({
 
     getAvailableSlots: builder.query<
       { date: string; slots: IUtcSlot[] },
-      { organizationId: string; staffId: string; date: string }
+      { organizationId: string; staffId: string; date: string; serviceId?: string }
     >({
-      query: ({ organizationId, staffId, date }) =>
-        `/appointments/slots/${organizationId}/${staffId}?date=${date}`,
+      query: ({ organizationId, staffId, date, serviceId }) => {
+        let url = `/appointments/slots/${organizationId}/${staffId}?date=${date}`;
+        if (serviceId) url += `&serviceId=${serviceId}`;
+        return url;
+      },
       providesTags: ["Appointments"],
     }),
 
@@ -147,6 +181,54 @@ export const authApi = createApi({
       query: (body) => ({ url: "/appointments/admin/reschedule-policy", method: "PUT", body }),
       invalidatesTags: ["ReschedulePolicy"],
     }),
+
+
+
+
+    getServicesByOrganization: builder.query<IService[], string>({
+      query: (organizationId) => `/services/getservices/organization/${organizationId}`,
+      transformResponse: (response: ApiResponse<IService[]>) => response.data,
+      providesTags: ["Services"],
+    }),
+
+    getServiceById: builder.query<IService, string>({
+      query: (id) => `/services/getservicebyid/${id}`,
+      transformResponse: (response: ApiResponse<IService>) => response.data,
+      providesTags: ["Services"],
+    }),
+
+    searchServices: builder.query<IService[], string>({
+      query: (q) => `/services/search?q=${encodeURIComponent(q)}`,
+      transformResponse: (response: ApiResponse<IService[]>) => response.data,
+      providesTags: ["Services"],
+    }),
+
+    getStaffForService: builder.query<
+      IStaffMember[],
+      { serviceId: string; organizationId: string }
+    >({
+      query: ({ serviceId }) => `/services/${serviceId}/staff`,
+      transformResponse: (response: ApiResponse<IStaffMember[]>) => response.data,
+    }),
+
+    createService: builder.mutation<IService, ICreateServiceForm>({
+      query: (body) => ({ url: "/services/createservice", method: "POST", body }),
+      invalidatesTags: ["Services"],
+    }),
+
+    updateService: builder.mutation<IService, { id: string; data: IUpdateServiceForm }>({
+      query: ({ id, data }) => ({
+        url: `/services/updateservice/${id}`,
+        method: "PUT",
+        body: data,
+      }),
+      invalidatesTags: ["Services"],
+    }),
+
+    deleteService: builder.mutation<{ message: string }, string>({
+      query: (id) => ({ url: `/services/deleteservice/${id}`, method: "DELETE" }),
+      invalidatesTags: ["Services"],
+    }),
   }),
 });
 
@@ -159,6 +241,8 @@ export const {
   useGetStaffQuery,
   useAddStaffMutation,
   useRemoveStaffMutation,
+  useAssignServiceToStaffMutation,
+  useRemoveServiceFromStaffMutation,
   useGetBusinessHoursQuery,
   useUpsertBusinessHoursMutation,
   useGetOrganizationStaffQuery,
@@ -171,4 +255,11 @@ export const {
   useGetAdminAppointmentsQuery,
   useGetReschedulePolicyQuery,
   useUpsertReschedulePolicyMutation,
+  useGetServicesByOrganizationQuery,
+  useGetServiceByIdQuery,
+  useSearchServicesQuery,
+  useGetStaffForServiceQuery,
+  useCreateServiceMutation,
+  useUpdateServiceMutation,
+  useDeleteServiceMutation,
 } = authApi;

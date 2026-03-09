@@ -7,7 +7,7 @@ export interface IUser {
   role: "user" | "admin" | "staff";
 
   organizationId?: Types.ObjectId;
-
+ services?:  Types.ObjectId[];
   refreshToken?: string;
 
   isVerified: boolean;

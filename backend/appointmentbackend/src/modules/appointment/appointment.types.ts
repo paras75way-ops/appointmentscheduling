@@ -14,4 +14,5 @@ export interface IAppointment {
     previousStartTime?: Date;
     rescheduledAt?: Date;
     rescheduleCount: number;
+    serviceId: Types.ObjectId; 
 }

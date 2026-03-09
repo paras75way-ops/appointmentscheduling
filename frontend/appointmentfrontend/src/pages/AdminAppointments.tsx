@@ -79,6 +79,7 @@ export default function AdminAppointments() {
                             <tr>
                                 <th className="text-left p-3 font-medium">Date (local)</th>
                                 <th className="text-left p-3 font-medium">Time (local)</th>
+                                <th className="text-left p-3 font-medium">Service</th>
                                 <th className="text-left p-3 font-medium">Staff</th>
                                 <th className="text-left p-3 font-medium">User</th>
                                 <th className="text-left p-3 font-medium">Status</th>
@@ -89,6 +90,7 @@ export default function AdminAppointments() {
                             {appointments.map((appt: IAppointment) => {
                                 const staff = getPopulated(appt.staffId);
                                 const user = getPopulated(appt.userId);
+                                const service = appt.serviceId && typeof appt.serviceId === "object" ? appt.serviceId : null;
                                 const isPast = new Date(appt.startTime).getTime() < Date.now();
                                 return (
                                     <tr key={appt._id} className={`transition hover:bg-gray-50 dark:hover:bg-gray-750 ${isPast ? "opacity-60" : ""}`}>
@@ -98,6 +100,7 @@ export default function AdminAppointments() {
                                         <td className="p-3 text-gray-700 dark:text-gray-300 font-medium">
                                             {utcIsoToLocalTime(appt.startTime)} – {utcIsoToLocalTime(appt.endTime)}
                                         </td>
+                                        <td className="p-3 text-indigo-600 dark:text-indigo-400">{service?.name ?? "—"}</td>
                                         <td className="p-3 text-gray-700 dark:text-gray-300">{staff?.name ?? "—"}</td>
                                         <td className="p-3 text-gray-700 dark:text-gray-300">{user?.name ?? "—"}</td>
                                         <td className="p-3">

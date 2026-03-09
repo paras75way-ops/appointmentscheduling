@@ -14,6 +14,7 @@ import ChangePassword from "../pages/Changepassword";
 
 import ManageOrganization from "../pages/ManageOrganization";
 import ManageStaff from "../pages/ManageStaff";
+import ManageServices from "../pages/ManageServices";
 import BusinessHoursConfig from "../pages/BusinessHoursConfig";
 import AdminAppointments from "../pages/AdminAppointments";
 import ReschedulePolicy from "../pages/ReschedulePolicy";
@@ -55,6 +56,7 @@ export const router = createBrowserRouter([
 
       { path: "/manage-organization", element: <RoleGuard><ManageOrganization /></RoleGuard> },
       { path: "/manage-staff", element: <RoleGuard><ManageStaff /></RoleGuard> },
+      { path: "/manage-services", element: <RoleGuard><ManageServices /></RoleGuard> },
       { path: "/business-hours", element: <RoleGuard><BusinessHoursConfig /></RoleGuard> },
       { path: "/appointments/admin", element: <RoleGuard><AdminAppointments /></RoleGuard> },
       { path: "/reschedule-policy", element: <RoleGuard><ReschedulePolicy /></RoleGuard> },

@@ -4,8 +4,11 @@ import {
     useGetOrganizationByIdQuery,
     useGetAvailableSlotsQuery,
     useBookAppointmentMutation,
+    useSearchServicesQuery,
+    useGetServicesByOrganizationQuery,
+    useGetStaffForServiceQuery,
 } from "../store/api/authApi";
-import type { IOrganization, IStaffMember, IUtcSlot } from "../types/auth";
+import type { IOrganization, IStaffMember, IUtcSlot, IService } from "../types/auth";
 import { utcIsoToLocalTime } from "../utils/timezone";
 
 type OrgType = "clinic" | "salon" | "service_provider" | "coworking_space" | "";
@@ -25,13 +28,16 @@ const ORG_TYPE_BADGES: Record<string, string> = {
     coworking_space: "bg-green-100 text-green-700",
 };
 
-type Step = "orgs" | "staff" | "slots" | "confirm";
+type Step = "orgs" | "services" | "staff" | "slots" | "confirm";
 
 export default function BrowseOrganizations() {
     const [typeFilter, setTypeFilter] = useState<OrgType>("");
+    const [searchQuery, setSearchQuery] = useState("");
+    const [debouncedQuery, setDebouncedQuery] = useState("");
     const [step, setStep] = useState<Step>("orgs");
 
     const [selectedOrg, setSelectedOrg] = useState<IOrganization | null>(null);
+    const [selectedService, setSelectedService] = useState<IService | null>(null);
     const [selectedStaff, setSelectedStaff] = useState<IStaffMember | null>(null);
     const [selectedDate, setSelectedDate] = useState(
         new Date().toISOString().split("T")[0]
@@ -40,9 +46,31 @@ export default function BrowseOrganizations() {
     const [notes, setNotes] = useState("");
     const [successMsg, setSuccessMsg] = useState("");
     const [errorMsg, setErrorMsg] = useState("");
+    const [searchTimer, setSearchTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
 
     const { data: orgs, isLoading: orgsLoading } = useListOrganizationsQuery(
         typeFilter || undefined
+    );
+
+
+    const { data: searchResults, isFetching: searchLoading } = useSearchServicesQuery(
+        debouncedQuery,
+        { skip: !debouncedQuery || debouncedQuery.length < 2 }
+    );
+
+
+    const { data: orgServices, isFetching: orgServicesLoading } = useGetServicesByOrganizationQuery(
+        selectedOrg?._id ?? "",
+        { skip: !selectedOrg || step !== "services" }
+    );
+
+
+    const { data: serviceStaff, isFetching: serviceStaffLoading } = useGetStaffForServiceQuery(
+        {
+            serviceId: selectedService?._id ?? "",
+            organizationId: selectedOrg?._id ?? "",
+        },
+        { skip: !selectedService || !selectedOrg || step !== "staff" }
     );
 
     const { data: orgDetail, isFetching: orgDetailLoading } =
@@ -56,6 +84,7 @@ export default function BrowseOrganizations() {
                 organizationId: selectedOrg?._id ?? "",
                 staffId: selectedStaff?._id ?? "",
                 date: selectedDate,
+                serviceId: selectedService?._id,
             },
             { skip: !selectedOrg || !selectedStaff || !selectedDate || step !== "slots" }
         );
@@ -64,8 +93,25 @@ export default function BrowseOrganizations() {
 
     const today = new Date().toISOString().split("T")[0];
 
+    const handleSearchChange = (value: string) => {
+        setSearchQuery(value);
+        if (searchTimer) clearTimeout(searchTimer);
+        const timer = setTimeout(() => {
+            setDebouncedQuery(value.trim());
+        }, 400);
+        setSearchTimer(timer);
+    };
+
     const handleSelectOrg = (org: IOrganization) => {
         setSelectedOrg(org);
+        setSelectedService(null);
+        setSelectedStaff(null);
+        setSelectedSlot(null);
+        setStep("services");
+    };
+
+    const handleSelectService = (service: IService) => {
+        setSelectedService(service);
         setSelectedStaff(null);
         setSelectedSlot(null);
         setStep("staff");
@@ -83,20 +129,22 @@ export default function BrowseOrganizations() {
     };
 
     const handleBook = async () => {
-        if (!selectedOrg || !selectedStaff || !selectedSlot) return;
+        if (!selectedOrg || !selectedStaff || !selectedSlot || !selectedService) return;
         try {
             setErrorMsg("");
             await book({
                 organizationId: selectedOrg._id,
                 staffId: selectedStaff._id,
+                serviceId: selectedService._id,
                 startTimeUtc: selectedSlot.startTimeUtc,
                 notes,
             }).unwrap();
             setSuccessMsg(
-                `Booked! ${utcIsoToLocalTime(selectedSlot.startTimeUtc)}–${utcIsoToLocalTime(selectedSlot.endTimeUtc)} on ${selectedDate} with ${selectedStaff.name}.`
+                `Booked! ${selectedService.name} with ${selectedStaff.name} — ${utcIsoToLocalTime(selectedSlot.startTimeUtc)}–${utcIsoToLocalTime(selectedSlot.endTimeUtc)} on ${selectedDate}.`
             );
             setStep("orgs");
             setSelectedOrg(null);
+            setSelectedService(null);
             setSelectedStaff(null);
             setSelectedSlot(null);
             setNotes("");
@@ -106,11 +154,23 @@ export default function BrowseOrganizations() {
         }
     };
 
+
+    const searchResultsByOrg = searchResults?.reduce<Record<string, { orgName: string; orgType: string; orgId: string; services: IService[] }>>((acc, svc) => {
+        const orgObj = svc.organizationId as { _id: string; name: string; type: string };
+        if (!orgObj?._id) return acc;
+        if (!acc[orgObj._id]) {
+            acc[orgObj._id] = { orgName: orgObj.name, orgType: orgObj.type, orgId: orgObj._id, services: [] };
+        }
+        acc[orgObj._id].services.push(svc);
+        return acc;
+    }, {}) ?? {};
+
     const Breadcrumb = () => (
         <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-6 flex-wrap">
             {[
                 { label: "Organizations", targetStep: "orgs" as Step },
-                ...(selectedOrg ? [{ label: selectedOrg.name, targetStep: "staff" as Step }] : []),
+                ...(selectedOrg ? [{ label: selectedOrg.name, targetStep: "services" as Step }] : []),
+                ...(selectedService ? [{ label: selectedService.name, targetStep: "staff" as Step }] : []),
                 ...(selectedStaff ? [{ label: selectedStaff.name, targetStep: "slots" as Step }] : []),
                 ...(step === "confirm" ? [{ label: "Confirm", targetStep: "confirm" as Step }] : []),
             ].map((crumb, i, arr) => (
@@ -120,7 +180,8 @@ export default function BrowseOrganizations() {
                         onClick={() => {
                             if (crumb.targetStep !== step) {
                                 setStep(crumb.targetStep);
-                                if (crumb.targetStep === "orgs") { setSelectedOrg(null); setSelectedStaff(null); setSelectedSlot(null); }
+                                if (crumb.targetStep === "orgs") { setSelectedOrg(null); setSelectedService(null); setSelectedStaff(null); setSelectedSlot(null); }
+                                if (crumb.targetStep === "services") { setSelectedService(null); setSelectedStaff(null); setSelectedSlot(null); }
                                 if (crumb.targetStep === "staff") { setSelectedStaff(null); setSelectedSlot(null); }
                                 if (crumb.targetStep === "slots") setSelectedSlot(null);
                             }
@@ -137,6 +198,7 @@ export default function BrowseOrganizations() {
         </div>
     );
 
+
     if (step === "orgs") {
         return (
             <div className="max-w-4xl mx-auto space-y-6">
@@ -145,7 +207,7 @@ export default function BrowseOrganizations() {
                         Browse Organizations
                     </h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Find a service provider and book an appointment with their staff.
+                        Find a service provider and book an appointment.
                     </p>
                 </div>
 
@@ -155,51 +217,174 @@ export default function BrowseOrganizations() {
                     </div>
                 )}
 
-                <div className="flex gap-2 flex-wrap">
-                    {ORG_TYPE_OPTIONS.map((opt) => (
-                        <button
-                            key={opt.value}
-                            onClick={() => setTypeFilter(opt.value)}
-                            className={`px-4 py-1.5 rounded-full text-sm font-medium transition border ${typeFilter === opt.value
-                                ? "bg-indigo-600 text-white border-indigo-600"
-                                : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-indigo-400"
-                                }`}
-                        >
-                            {opt.label}
-                        </button>
-                    ))}
+
+                <div className="relative">
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => handleSearchChange(e.target.value)}
+                        placeholder="Search services (e.g. haircut, shave, consultation)..."
+                        className="w-full p-3 pl-10 rounded-xl border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                    />
+                    <svg className="absolute left-3 top-3.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
                 </div>
 
-                {orgsLoading ? (
+
+                {debouncedQuery.length >= 2 && (
+                    <div className="space-y-3">
+                        <p className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                            Search results for "{debouncedQuery}"
+                        </p>
+                        {searchLoading ? (
+                            <div className="grid gap-3">
+                                {[...Array(2)].map((_, i) => (
+                                    <div key={i} className="h-20 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
+                                ))}
+                            </div>
+                        ) : Object.keys(searchResultsByOrg).length === 0 ? (
+                            <p className="text-sm text-gray-500 bg-gray-50 dark:bg-gray-800 p-4 rounded-lg text-center">
+                                No services found matching "{debouncedQuery}".
+                            </p>
+                        ) : (
+                            <div className="grid gap-3">
+                                {Object.entries(searchResultsByOrg).map(([orgId, group]) => (
+                                    <div
+                                        key={orgId}
+                                        className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 shadow-sm"
+                                    >
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h3 className="font-semibold text-gray-900 dark:text-white">{group.orgName}</h3>
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${ORG_TYPE_BADGES[group.orgType] ?? "bg-gray-100 text-gray-600"}`}>
+                                                {group.orgType.replace(/_/g, " ")}
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {group.services.map((svc) => (
+                                                <button
+                                                    key={svc._id}
+                                                    onClick={() => {
+                                                        const orgObj = svc.organizationId as { _id: string; name: string; type: string };
+                                                        setSelectedOrg({ _id: orgObj._id, name: orgObj.name, type: orgObj.type, owner: "", staff: [] } as IOrganization);
+                                                        handleSelectService(svc);
+                                                    }}
+                                                    className="px-3 py-1.5 rounded-lg text-sm border border-indigo-200 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition"
+                                                >
+                                                    {svc.name} — ₹{svc.price} · {svc.duration}min
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+
+                {(!debouncedQuery || debouncedQuery.length < 2) && (
+                    <>
+                        <div className="flex gap-2 flex-wrap">
+                            {ORG_TYPE_OPTIONS.map((opt) => (
+                                <button
+                                    key={opt.value}
+                                    onClick={() => setTypeFilter(opt.value)}
+                                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition border ${typeFilter === opt.value
+                                        ? "bg-indigo-600 text-white border-indigo-600"
+                                        : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-indigo-400"
+                                        }`}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {orgsLoading ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {[...Array(4)].map((_, i) => (
+                                    <div key={i} className="h-28 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
+                                ))}
+                            </div>
+                        ) : !orgs?.length ? (
+                            <div className="text-center text-gray-500 py-12">No organizations found.</div>
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {orgs.map((org) => (
+                                    <button
+                                        key={org._id}
+                                        onClick={() => handleSelectOrg(org)}
+                                        className="group text-left bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 shadow-sm hover:border-indigo-400 hover:shadow-md transition"
+                                    >
+                                        <div className="flex items-start justify-between mb-3">
+                                            <h3 className="font-semibold text-gray-900 dark:text-white group-hover:text-indigo-600 transition">
+                                                {org.name}
+                                            </h3>
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${ORG_TYPE_BADGES[org.type] ?? "bg-gray-100 text-gray-600"}`}>
+                                                {org.type.replace(/_/g, " ")}
+                                            </span>
+                                        </div>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                                            {Array.isArray(org.staff) ? org.staff.length : 0} staff member
+                                            {(Array.isArray(org.staff) ? org.staff.length : 0) !== 1 ? "s" : ""}
+                                        </p>
+                                        <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-2 group-hover:underline">
+                                            View services →
+                                        </p>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </>
+                )}
+            </div>
+        );
+    }
+
+
+    if (step === "services") {
+        return (
+            <div className="max-w-4xl mx-auto space-y-6">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                    Select a Service
+                </h1>
+                <Breadcrumb />
+
+                {orgServicesLoading ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {[...Array(4)].map((_, i) => (
-                            <div key={i} className="h-28 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
+                        {[...Array(3)].map((_, i) => (
+                            <div key={i} className="h-24 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
                         ))}
                     </div>
-                ) : !orgs?.length ? (
-                    <div className="text-center text-gray-500 py-12">No organizations found.</div>
+                ) : !orgServices?.length ? (
+                    <div className="text-center text-gray-500 dark:text-gray-400 py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                        No services available at this organization.
+                    </div>
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {orgs.map((org) => (
+                        {orgServices.filter(s => s.isActive).map((svc) => (
                             <button
-                                key={org._id}
-                                onClick={() => handleSelectOrg(org)}
+                                key={svc._id}
+                                onClick={() => handleSelectService(svc)}
                                 className="group text-left bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 shadow-sm hover:border-indigo-400 hover:shadow-md transition"
                             >
-                                <div className="flex items-start justify-between mb-3">
+                                <div className="flex items-start justify-between mb-1">
                                     <h3 className="font-semibold text-gray-900 dark:text-white group-hover:text-indigo-600 transition">
-                                        {org.name}
+                                        {svc.name}
                                     </h3>
-                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${ORG_TYPE_BADGES[org.type] ?? "bg-gray-100 text-gray-600"}`}>
-                                        {org.type.replace(/_/g, " ")}
-                                    </span>
+                                    {svc.category && (
+                                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300">
+                                            {svc.category}
+                                        </span>
+                                    )}
                                 </div>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">
-                                    {Array.isArray(org.staff) ? org.staff.length : 0} staff member
-                                    {(Array.isArray(org.staff) ? org.staff.length : 0) !== 1 ? "s" : ""}
-                                </p>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{svc.description}</p>
+                                <div className="flex gap-3 text-sm text-gray-600 dark:text-gray-300">
+                                    <span className="font-medium">₹{svc.price}</span>
+                                    <span>{svc.duration} min</span>
+                                </div>
                                 <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-2 group-hover:underline">
-                                    View staff →
+                                    Select this service →
                                 </p>
                             </button>
                         ))}
@@ -209,8 +394,9 @@ export default function BrowseOrganizations() {
         );
     }
 
+
     if (step === "staff") {
-        const staffList = orgDetail?.staff ?? [];
+        const staffList = serviceStaff ?? [];
         return (
             <div className="max-w-4xl mx-auto space-y-6">
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -218,19 +404,19 @@ export default function BrowseOrganizations() {
                 </h1>
                 <Breadcrumb />
 
-                {orgDetailLoading ? (
+                {serviceStaffLoading ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {[...Array(3)].map((_, i) => (
                             <div key={i} className="h-20 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
                         ))}
                     </div>
                 ) : !staffList.length ? (
-                    <div className="text-center text-gray-500 dark:text-gray-400 py-12">
-                        No staff available in this organization yet.
+                    <div className="text-center text-gray-500 dark:text-gray-400 py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                        No staff available for this service.
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {(staffList as IStaffMember[]).map((staff) => (
+                        {staffList.map((staff) => (
                             <button
                                 key={staff._id}
                                 onClick={() => handleSelectStaff(staff)}
@@ -257,6 +443,7 @@ export default function BrowseOrganizations() {
             </div>
         );
     }
+
 
     if (step === "slots") {
         return (
@@ -316,6 +503,7 @@ export default function BrowseOrganizations() {
         );
     }
 
+
     return (
         <div className="max-w-xl mx-auto space-y-6">
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -327,6 +515,7 @@ export default function BrowseOrganizations() {
                 <div className="space-y-2">
                     {[
                         { label: "Organization", value: selectedOrg?.name },
+                        { label: "Service", value: selectedService ? `${selectedService.name} (₹${selectedService.price} · ${selectedService.duration}min)` : "" },
                         { label: "Staff", value: selectedStaff?.name },
                         { label: "Date", value: selectedDate },
                         {

@@ -14,8 +14,8 @@ export default function SignIn() {
   const actionData = useActionData() as { error?: string } | undefined;
   const navigation = useNavigation();
   const submit = useSubmit();
-  // If we are currently navigating and submitting data, we're in submitting state
-  const isSubmitting = navigation.state !== "idle" && navigation.formMethod === "post";
+ 
+  const isSubmitting = navigation.state !== "idle" && navigation.formMethod === "POST";
 
   const {
     register,
@@ -43,7 +43,7 @@ export default function SignIn() {
           </div>
         )}
 
-        {/* Email */}
+     
         <div>
           <input
             {...register("email")}

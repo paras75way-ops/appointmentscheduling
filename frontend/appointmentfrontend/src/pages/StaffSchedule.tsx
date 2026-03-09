@@ -52,6 +52,7 @@ export default function StaffSchedule() {
                 <div className="space-y-3">
                     {appointments.map((appt: IAppointment) => {
                         const user = getPopulated(appt.userId);
+                        const service = appt.serviceId && typeof appt.serviceId === "object" ? appt.serviceId : null;
                         return (
                             <div
                                 key={appt._id}
@@ -64,6 +65,11 @@ export default function StaffSchedule() {
                                     <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
                                         {utcIsoToLocalDate(appt.startTime)}
                                     </p>
+                                    {service && (
+                                        <p className="text-sm text-indigo-600 dark:text-indigo-400 font-medium mt-1">
+                                            {service.name} · {service.duration}min
+                                        </p>
+                                    )}
                                     {user && (
                                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                                             {user.name} ({user.email})

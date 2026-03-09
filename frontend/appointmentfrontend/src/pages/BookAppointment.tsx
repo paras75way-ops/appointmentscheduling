@@ -3,8 +3,10 @@ import {
     useGetOrganizationStaffQuery,
     useGetAvailableSlotsQuery,
     useBookAppointmentMutation,
+    useGetServicesByOrganizationQuery,
+    useGetStaffForServiceQuery,
 } from "../store/api/authApi";
-import type { IUtcSlot } from "../types/auth";
+import type { IUtcSlot, IService, IStaffMember } from "../types/auth";
 import { useRouteLoaderData } from "react-router";
 import type { IUser } from "../types/auth";
 import { utcIsoToLocalTime } from "../utils/timezone";
@@ -13,6 +15,7 @@ export default function BookAppointment() {
     const user = useRouteLoaderData("private-layout") as IUser;
     const orgId = user.organizationId ?? "";
 
+    const [selectedServiceId, setSelectedServiceId] = useState("");
     const [selectedStaffId, setSelectedStaffId] = useState("");
     const [selectedDate, setSelectedDate] = useState("");
     const [selectedSlot, setSelectedSlot] = useState<IUtcSlot | null>(null);
@@ -20,24 +23,38 @@ export default function BookAppointment() {
     const [success, setSuccess] = useState("");
     const [apiError, setApiError] = useState("");
 
-    const { data: staffList, isLoading: staffLoading } =
-        useGetOrganizationStaffQuery(orgId, { skip: !orgId });
+    const { data: orgServices, isLoading: servicesLoading } =
+        useGetServicesByOrganizationQuery(orgId, { skip: !orgId });
+
+    const { data: serviceStaff, isLoading: staffLoading } =
+        useGetStaffForServiceQuery(
+            { serviceId: selectedServiceId, organizationId: orgId },
+            { skip: !orgId || !selectedServiceId }
+        );
 
     const { data: slotsData, isFetching: slotsLoading } = useGetAvailableSlotsQuery(
-        { organizationId: orgId, staffId: selectedStaffId, date: selectedDate },
+        {
+            organizationId: orgId,
+            staffId: selectedStaffId,
+            date: selectedDate,
+            serviceId: selectedServiceId || undefined,
+        },
         { skip: !orgId || !selectedStaffId || !selectedDate }
     );
 
     const [bookAppointment, { isLoading: isBooking }] = useBookAppointmentMutation();
 
+    const selectedService = orgServices?.find((s) => s._id === selectedServiceId);
+
     const handleBook = async () => {
-        if (!selectedSlot) return;
+        if (!selectedSlot || !selectedServiceId) return;
         try {
             setApiError("");
             setSuccess("");
             await bookAppointment({
                 organizationId: orgId,
                 staffId: selectedStaffId,
+                serviceId: selectedServiceId,
                 startTimeUtc: selectedSlot.startTimeUtc,
                 notes,
             }).unwrap();
@@ -60,32 +77,74 @@ export default function BookAppointment() {
 
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm space-y-5">
 
+
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        1. Select Staff Member
+                        1. Select Service
                     </label>
-                    {staffLoading ? (
-                        <p className="text-sm text-gray-500">Loading staff...</p>
+                    {servicesLoading ? (
+                        <p className="text-sm text-gray-500">Loading services...</p>
+                    ) : !orgServices?.length ? (
+                        <p className="text-sm text-gray-500 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                            No services available. Contact your admin.
+                        </p>
                     ) : (
                         <select
-                            value={selectedStaffId}
-                            onChange={(e) => { setSelectedStaffId(e.target.value); setSelectedSlot(null); }}
+                            value={selectedServiceId}
+                            onChange={(e) => {
+                                setSelectedServiceId(e.target.value);
+                                setSelectedStaffId("");
+                                setSelectedSlot(null);
+                            }}
                             className="w-full p-2.5 rounded-lg border bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
                         >
-                            <option value="">Select a staff member</option>
-                            {staffList?.map((s) => (
-                                <option key={s._id} value={s._id}>
-                                    {s.name} — {s.email}
+                            <option value="">Select a service</option>
+                            {orgServices.filter(s => s.isActive).map((svc) => (
+                                <option key={svc._id} value={svc._id}>
+                                    {svc.name} — ₹{svc.price} · {svc.duration}min
                                 </option>
                             ))}
                         </select>
                     )}
                 </div>
 
+
+                {selectedServiceId && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            2. Select Staff Member
+                        </label>
+                        {staffLoading ? (
+                            <p className="text-sm text-gray-500">Loading staff...</p>
+                        ) : !serviceStaff?.length ? (
+                            <p className="text-sm text-gray-500 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                                No staff assigned to this service yet.
+                            </p>
+                        ) : (
+                            <select
+                                value={selectedStaffId}
+                                onChange={(e) => {
+                                    setSelectedStaffId(e.target.value);
+                                    setSelectedSlot(null);
+                                }}
+                                className="w-full p-2.5 rounded-lg border bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+                            >
+                                <option value="">Select a staff member</option>
+                                {serviceStaff.map((s) => (
+                                    <option key={s._id} value={s._id}>
+                                        {s.name} — {s.email}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
+                    </div>
+                )}
+
+
                 {selectedStaffId && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            2. Select Date
+                            3. Select Date
                         </label>
                         <input
                             type="date"
@@ -97,10 +156,11 @@ export default function BookAppointment() {
                     </div>
                 )}
 
+
                 {selectedDate && selectedStaffId && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            3. Select Time Slot
+                            4. Select Time Slot
                             <span className="ml-1 text-xs text-gray-400 font-normal">(your local time)</span>
                         </label>
                         {slotsLoading ? (
@@ -129,10 +189,11 @@ export default function BookAppointment() {
                     </div>
                 )}
 
+
                 {selectedSlot && (
                     <div className="space-y-3 pt-2 border-t border-gray-200 dark:border-gray-700">
                         <div className="text-sm text-indigo-600 dark:text-indigo-400 font-medium">
-                            Selected: {utcIsoToLocalTime(selectedSlot.startTimeUtc)} – {utcIsoToLocalTime(selectedSlot.endTimeUtc)} on {selectedDate}
+                            {selectedService?.name} — {utcIsoToLocalTime(selectedSlot.startTimeUtc)} – {utcIsoToLocalTime(selectedSlot.endTimeUtc)} on {selectedDate}
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

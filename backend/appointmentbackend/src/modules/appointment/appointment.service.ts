@@ -3,6 +3,7 @@ import Appointment from "./appointment.models";
 import Organization from "../organization/organization.models";
 import User from "../auth/auth.models";
 import ReschedulePolicy from "./reschedulePolicy.models";
+import { ServiceModel } from "../services/services.model";
 import { generateSlotsForDay, timeToMinutes } from "../../utils/slotGenerator";
 import { buildUtcFromIst, utcToIstHHmm } from "../../utils/timezone";
 import { Types } from "mongoose";
@@ -22,6 +23,7 @@ interface AvailableSlotsInput {
     organizationId: string;
     staffId: string;
     date: string;
+    serviceId?: string;
 }
 
 export const getOrganizationStaff = async (organizationId: string) => {
@@ -33,10 +35,20 @@ export const getOrganizationStaff = async (organizationId: string) => {
     return org.staff;
 };
 
+export const getStaffForService = async (serviceId: string, organizationId: string) => {
+    const staff = await User.find({
+        services: new Types.ObjectId(serviceId),
+        organizationId: new Types.ObjectId(organizationId),
+        role: "staff",
+    }).select("name email role");
+
+    return staff;
+};
+
 export const getAvailableSlots = async (
     input: AvailableSlotsInput
 ): Promise<UtcSlot[]> => {
-    const { organizationId, staffId, date } = input;
+    const { organizationId, staffId, date, serviceId } = input;
 
     const staffUser = await User.findOne({
         _id: new Types.ObjectId(staffId),
@@ -44,6 +56,27 @@ export const getAvailableSlots = async (
         role: "staff",
     });
     if (!staffUser) throw new Error("Staff member not found in this organization");
+
+
+    let slotDuration: number;
+    if (serviceId) {
+        const service = await ServiceModel.findById(serviceId);
+        if (!service) throw new Error("Service not found");
+
+        const isAssigned = staffUser.services?.some(
+            (s) => s.toString() === serviceId
+        );
+        if (!isAssigned) {
+            throw new Error("Staff member is not assigned to this service");
+        }
+        slotDuration = service.duration;
+    } else {
+        const bh = await BusinessHours.findOne({
+            organizationId: new Types.ObjectId(organizationId),
+        });
+        if (!bh) throw new Error("Business hours not configured for this organization");
+        slotDuration = bh.slotDuration;
+    }
 
     const bh = await BusinessHours.findOne({
         organizationId: new Types.ObjectId(organizationId),
@@ -63,42 +96,76 @@ export const getAvailableSlots = async (
     const hhmmSlots = generateSlotsForDay(
         daySchedule.openTime,
         daySchedule.closeTime,
-        bh.slotDuration
+        slotDuration
     );
 
     const dayStart = new Date(`${date}T00:00:00.000+05:30`);
     const dayEnd = new Date(`${date}T23:59:59.999+05:30`);
 
+
     const booked = await Appointment.find({
         staffId: new Types.ObjectId(staffId),
         startTime: { $gte: dayStart, $lte: dayEnd },
-        status: "booked",
-    }).select("startTime");
-
-    const bookedHHmm = new Set(booked.map((a) => utcToIstHHmm(a.startTime)));
+        status: { $in: ["booked", "rescheduled"] },
+    }).select("startTime endTime");
 
     const now = Date.now();
 
+
     return hhmmSlots
-        .filter((slot) => !bookedHHmm.has(slot.startTime))
         .map((slot) => {
             const startUtc = buildUtcFromIst(date, slot.startTime);
             const endUtc = buildUtcFromIst(date, slot.endTime);
             return { startTimeUtc: startUtc.toISOString(), endTimeUtc: endUtc.toISOString() };
         })
-        .filter((slot) => new Date(slot.startTimeUtc).getTime() > now);
+        .filter((slot) => {
+            const slotStart = new Date(slot.startTimeUtc).getTime();
+            const slotEnd = new Date(slot.endTimeUtc).getTime();
+
+
+            if (slotStart <= now) return false;
+
+
+            for (const appt of booked) {
+                const apptStart = appt.startTime.getTime();
+                const apptEnd = appt.endTime.getTime();
+
+                if (slotStart < apptEnd && slotEnd > apptStart) {
+                    return false;
+                }
+            }
+            return true;
+        });
 };
 
 interface BookAppointmentInput {
     organizationId: string;
     staffId: string;
     userId: string;
+    serviceId: string;
     startTimeUtc: string;
     notes?: string;
 }
 
 export const bookAppointment = async (input: BookAppointmentInput) => {
-    const { organizationId, staffId, userId, startTimeUtc, notes } = input;
+    const { organizationId, staffId, userId, serviceId, startTimeUtc, notes } = input;
+
+
+    const service = await ServiceModel.findById(serviceId);
+    if (!service) throw new Error("Service not found");
+    if (service.organizationId.toString() !== organizationId) {
+        throw new Error("Service does not belong to this organization");
+    }
+
+
+    const staffUser = await User.findById(staffId);
+    if (!staffUser) throw new Error("Staff member not found");
+    const isAssigned = staffUser.services?.some(
+        (s) => s.toString() === serviceId
+    );
+    if (!isAssigned) {
+        throw new Error("Staff member is not assigned to this service");
+    }
 
     const startDate = new Date(startTimeUtc);
     if (isNaN(startDate.getTime())) {
@@ -109,32 +176,28 @@ export const bookAppointment = async (input: BookAppointmentInput) => {
         throw new Error("Cannot book an appointment in the past");
     }
 
-    const dateStr = startDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    const hhmmStr = utcToIstHHmm(startDate);
 
-    const available = await getAvailableSlots({ organizationId, staffId, date: dateStr });
-    const chosen = available.find((s) => {
-        const slotHHmm = utcToIstHHmm(new Date(s.startTimeUtc));
-        return slotHHmm === hhmmStr;
+    const endDate = new Date(startDate.getTime() + service.duration * 60 * 1000);
+
+
+    const overlapping = await Appointment.findOne({
+        staffId: new Types.ObjectId(staffId),
+        status: { $in: ["booked", "rescheduled"] },
+        startTime: { $lt: endDate },
+        endTime: { $gt: startDate },
     });
 
-    if (!chosen) {
+    if (overlapping) {
         throw new Error(
-            "The selected time slot is not available — it may be booked or outside business hours"
+            "The selected time slot is not available — it clashes with an existing appointment"
         );
     }
-
-    const bh = await BusinessHours.findOne({
-        organizationId: new Types.ObjectId(organizationId),
-    });
-    if (!bh) throw new Error("Business hours not found");
-
-    const endDate = new Date(startDate.getTime() + bh.slotDuration * 60 * 1000);
 
     const appointment = await Appointment.create({
         organizationId: new Types.ObjectId(organizationId),
         staffId: new Types.ObjectId(staffId),
         userId: new Types.ObjectId(userId),
+        serviceId: new Types.ObjectId(serviceId),
         startTime: startDate,
         endTime: endDate,
         status: "booked",
@@ -214,32 +277,34 @@ export const rescheduleAppointment = async (
         throw new Error("Cannot reschedule to a time in the past");
     }
 
-    const dateStr = startDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    const hhmmStr = utcToIstHHmm(startDate);
 
-    const available = await getAvailableSlots({
-        organizationId: appt.organizationId.toString(),
-        staffId: appt.staffId.toString(),
-        date: dateStr,
-    });
-
-    const chosen = available.find((s) => {
-        const slotHHmm = utcToIstHHmm(new Date(s.startTimeUtc));
-        return slotHHmm === hhmmStr;
-    });
-
-    if (!chosen) {
-        throw new Error(
-            "The selected time slot is not available — it may be booked or outside business hours"
-        );
+    let duration: number;
+    if (appt.serviceId) {
+        const service = await ServiceModel.findById(appt.serviceId);
+        duration = service ? service.duration : 30;
+    } else {
+        const bh = await BusinessHours.findOne({
+            organizationId: appt.organizationId,
+        });
+        duration = bh ? bh.slotDuration : 30;
     }
 
-    const bh = await BusinessHours.findOne({
-        organizationId: appt.organizationId,
-    });
-    if (!bh) throw new Error("Business hours not found");
+    const endDate = new Date(startDate.getTime() + duration * 60 * 1000);
 
-    const endDate = new Date(startDate.getTime() + bh.slotDuration * 60 * 1000);
+
+    const overlapping = await Appointment.findOne({
+        _id: { $ne: appt._id },
+        staffId: appt.staffId,
+        status: { $in: ["booked", "rescheduled"] },
+        startTime: { $lt: endDate },
+        endTime: { $gt: startDate },
+    });
+
+    if (overlapping) {
+        throw new Error(
+            "The selected time slot is not available — it clashes with an existing appointment"
+        );
+    }
 
     appt.previousStartTime = appt.startTime;
     appt.startTime = startDate;
@@ -267,6 +332,7 @@ export const getUserAppointments = async (
         })
             .populate("staffId", "name email")
             .populate("organizationId", "name type")
+            .populate("serviceId", "name duration price")
             .sort({ startTime: 1 });
     }
     return Appointment.find({
@@ -275,6 +341,7 @@ export const getUserAppointments = async (
     })
         .populate("staffId", "name email")
         .populate("organizationId", "name type")
+        .populate("serviceId", "name duration price")
         .sort({ startTime: -1 });
 };
 
@@ -295,6 +362,7 @@ export const getStaffAppointments = async (staffId: string, date?: string) => {
 
     return Appointment.find(query)
         .populate("userId", "name email")
+        .populate("serviceId", "name duration price")
         .sort({ startTime: 1 });
 };
 
@@ -322,6 +390,7 @@ export const getOrganizationAppointments = async (
     return Appointment.find(query)
         .populate("staffId", "name email")
         .populate("userId", "name email")
+        .populate("serviceId", "name duration price")
         .sort({ startTime: -1 });
 };
 

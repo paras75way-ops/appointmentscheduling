@@ -26,7 +26,12 @@ const userSchema = new Schema<IUserDocument>(
       ref: "Organization",
       default: null,
     },
-
+ services: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Service",
+      },
+    ],
     refreshToken: { type: String },
 
     isVerified: {

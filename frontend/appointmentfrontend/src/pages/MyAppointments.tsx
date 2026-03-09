@@ -27,6 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
 function RescheduleModal({ appointment, onClose }: { appointment: IAppointment, onClose: () => void }) {
     const orgId = typeof appointment.organizationId === "object" ? appointment.organizationId._id : appointment.organizationId;
     const staffId = typeof appointment.staffId === "object" ? appointment.staffId._id : appointment.staffId;
+    const serviceId = appointment.serviceId && typeof appointment.serviceId === "object" ? appointment.serviceId._id : (appointment.serviceId as string | undefined);
 
     const [selectedDate, setSelectedDate] = useState("");
     const [selectedSlot, setSelectedSlot] = useState<IUtcSlot | null>(null);
@@ -34,7 +35,7 @@ function RescheduleModal({ appointment, onClose }: { appointment: IAppointment, 
     const [apiError, setApiError] = useState("");
 
     const { data: slotsData, isFetching: slotsLoading } = useGetAvailableSlotsQuery(
-        { organizationId: orgId, staffId: staffId, date: selectedDate },
+        { organizationId: orgId, staffId: staffId, date: selectedDate, serviceId },
         { skip: !selectedDate }
     );
 
@@ -182,6 +183,7 @@ export default function MyAppointments() {
                     {appointments.map((appt: IAppointment) => {
                         const staff = getPopulated(appt.staffId);
                         const org = typeof appt.organizationId === "object" ? appt.organizationId : null;
+                        const service = appt.serviceId && typeof appt.serviceId === "object" ? appt.serviceId : null;
                         const isPast = new Date(appt.startTime).getTime() < Date.now();
                         return (
                             <div
@@ -198,6 +200,11 @@ export default function MyAppointments() {
                                     <p className="text-sm text-gray-500 dark:text-gray-400">
                                         {utcIsoToLocalDate(appt.startTime)}
                                     </p>
+                                    {service && (
+                                        <p className="text-sm text-indigo-600 dark:text-indigo-400 font-medium">
+                                            {service.name} · ₹{service.price} · {service.duration}min
+                                        </p>
+                                    )}
                                     {staff && (
                                         <p className="text-sm text-gray-600 dark:text-gray-400">
                                             Staff: {staff.name}

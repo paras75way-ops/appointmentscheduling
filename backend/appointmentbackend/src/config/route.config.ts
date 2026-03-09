@@ -44,4 +44,16 @@ export const routePermissions: RoutePermission[] = [
     { method: "GET", path: "/appointments/admin/all", roles: ["admin"] },
     { method: "GET", path: "/appointments/admin/reschedule-policy", roles: ["admin"] },
     { method: "PUT", path: "/appointments/admin/reschedule-policy", roles: ["admin"] },
+
+    { method: "POST", path: "/services/createservice", roles: ["admin"] },
+    { method: "GET", path: "/services/getservice", roles: ["user", "admin", "staff"] },
+    { method: "GET", path: "/services/getservicebyid/:id", roles: ["user", "admin", "staff"] },
+    { method: "GET", path: "/services/getservices/organization/:organizationId", roles: ["user", "admin", "staff"] },
+    { method: "PUT", path: "/services/updateservice/:id", roles: ["admin"] },
+    { method: "DELETE", path: "/services/deleteservice/:id", roles: ["admin"] },
+    { method: "GET", path: "/services/search", roles: ["user", "admin", "staff"] },
+    { method: "GET", path: "/services/:serviceId/staff", roles: ["user", "admin", "staff"] },
+
+    { method: "POST", path: "/staff/:staffId/services/:serviceId", roles: ["admin"] },
+    { method: "DELETE", path: "/staff/:staffId/services/:serviceId", roles: ["admin"] },
 ];
